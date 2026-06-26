@@ -28,12 +28,18 @@ async def find_car_shows(lat: float, lng: float, radius: int) -> list[dict]:
         response.raise_for_status()
 
         data = response.json()
-        return [
-            {
+        results = []
+        for event in data.get("events", []):
+            venue = event.get("venue") or {}
+            address = venue.get("address") or {}
+            lat = venue.get("latitude")
+            lng = venue.get("longitude")
+            results.append({
                 "name": event["name"]["text"],
                 "date": event["start"]["local"],
                 "url": event["url"],
-                "venue": event.get("venue", {}).get("address", {}).get("localized_address_display"),
-            }
-            for event in data.get("events", [])
-        ]
+                "venue": address.get("localized_address_display"),
+                "lat": float(lat) if lat else None,
+                "lng": float(lng) if lng else None,
+            })
+        return results

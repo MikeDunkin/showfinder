@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Car Show Finder</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    #map { position: fixed; inset: 0; }
+
+    #panel {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 1000;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      width: 280px;
+      overflow: hidden;
+    }
+
+    #panel-header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 14px 16px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    #panel-body { padding: 14px; }
+
+    #panel-body input[type="text"],
+    #panel-body input[type="number"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 6px;
+    }
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-gps { background: #34a853; color: #fff; }
+    .btn-gps:hover { background: #2d9249; }
+
+    #status {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+      min-height: 18px;
+    }
+
+    .leaflet-popup-content strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .leaflet-popup-content .meta { font-size: 12px; color: #555; margin-bottom: 6px; }
+    .leaflet-popup-content .actions a {
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 12px;
+      color: #1a73e8;
+      text-decoration: none;
+    }
+    .leaflet-popup-content .actions a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <div id="panel-header">Car Show Finder</div>
+    <div id="panel-body">
+      <input type="text" id="zip" placeholder="ZIP code" maxlength="10" />
+      <input type="number" id="radius" value="25" min="5" max="100" placeholder="Radius (miles)" />
+      <button class="btn btn-primary" onclick="searchByZip()">Search by ZIP</button>
+      <button class="btn btn-gps" onclick="searchByGPS()">Use My Location</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const map = L.map('map').setView([39.5, -98.35], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    let markers = [];
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    function clearMarkers() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+    }
+
+    function displayShows(shows, centerLat, centerLng) {
+      clearMarkers();
+      map.setView([centerLat, centerLng], 10);
+
+      if (shows.length === 0) {
+        setStatus('No car shows found in this area.');
+        return;
+      }
+
+      setStatus(`Found ${shows.length} car show(s).`);
+      const bounds = [];
+
+      shows.forEach(show => {
+        const lat = show.lat ?? centerLat;
+        const lng = show.lng ?? centerLng;
+        bounds.push([lat, lng]);
+
+        const date = show.date ? new Date(show.date).toLocaleDateString('en-US', {
+          weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+        }) : 'Date TBD';
+
+        const venue = show.venue || 'Venue TBD';
+        const dirTarget = show.lat
+          ? `${show.lat},${show.lng}`
+          : encodeURIComponent(venue);
+        const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${dirTarget}`;
+
+        const marker = L.marker([lat, lng]).addTo(map);
+        marker.bindPopup(`
+          <strong>${show.name}</strong>
+          <div class="meta">
+            📅 ${date}<br>
+            📍 ${venue}
+          </div>
+          <div class="actions">
+            <a href="${directionsUrl}" target="_blank">🗺 Directions</a>
+            <a href="${show.url}" target="_blank">🎟 Details</a>
+          </div>
+        `);
+        markers.push(marker);
+      });
+
+      if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    }
+
+    async function searchByGPS() {
+      if (!navigator.geolocation) {
+        setStatus('Geolocation not supported by your browser.');
+        return;
+      }
+      setStatus('Getting your location...');
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const radius = document.getElementById('radius').value;
+        setStatus('Searching for car shows...');
+        try {
+          const res = await fetch(`/shows?lat=${lat}&lng=${lng}&radius=${radius}`);
+          const shows = await res.json();
+          displayShows(shows, lat, lng);
+        } catch {
+          setStatus('Error fetching shows.');
+        }
+      }, () => setStatus('Could not get your location. Try ZIP search instead.'));
+    }
+
+    async function searchByZip() {
+      const zip = document.getElementById('zip').value.trim();
+      const radius = document.getElementById('radius').value;
+      if (!zip) { setStatus('Please enter a ZIP code.'); return; }
+      setStatus('Searching...');
+      try {
+        const res = await fetch(`/shows/by-zip?zip_code=${zip}&radius=${radius}`);
+        if (!res.ok) { setStatus('Invalid ZIP code or API error.'); return; }
+        const shows = await res.json();
+
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json&limit=1`,
+          { headers: { 'User-Agent': 'carshow-finder/1.0' } }
+        );
+        const geo = await geoRes.json();
+        if (geo.length > 0) {
+          displayShows(shows, parseFloat(geo[0].lat), parseFloat(geo[0].lon));
+        } else {
+          setStatus('Could not resolve ZIP code.');
+        }
+      } catch {
+        setStatus('Error fetching shows.');
+      }
+    }
+
+    searchByGPS();
+  </script>
+</body>
+</html>
