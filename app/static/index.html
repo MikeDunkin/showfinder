@@ -154,25 +154,45 @@
       }
     }
 
-    async function searchByGPS() {
-      if (!navigator.geolocation) {
-        setStatus('Geolocation not supported by your browser.');
-        return;
+    async function getLocationByIP() {
+      try {
+        const res = await fetch('https://ip-api.com/json/');
+        const data = await res.json();
+        if (data.status === 'success') return { lat: data.lat, lng: data.lon };
+      } catch {}
+      return null;
+    }
+
+    async function doSearch(lat, lng) {
+      const radius = document.getElementById('radius').value;
+      setStatus('Searching for car shows...');
+      try {
+        const res = await fetch(`/shows?lat=${lat}&lng=${lng}&radius=${radius}`);
+        if (!res.ok) { setStatus('API error — check server logs.'); return; }
+        const shows = await res.json();
+        displayShows(shows, lat, lng);
+      } catch {
+        setStatus('Error fetching shows.');
       }
+    }
+
+    async function searchByGPS() {
       setStatus('Getting your location...');
-      navigator.geolocation.getCurrentPosition(async pos => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const radius = document.getElementById('radius').value;
-        setStatus('Searching for car shows...');
-        try {
-          const res = await fetch(`/shows?lat=${lat}&lng=${lng}&radius=${radius}`);
-          const shows = await res.json();
-          displayShows(shows, lat, lng);
-        } catch {
-          setStatus('Error fetching shows.');
-        }
-      }, () => setStatus('Could not get your location. Try ZIP search instead.'));
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => doSearch(pos.coords.latitude, pos.coords.longitude),
+          async () => {
+            setStatus('Browser location blocked (HTTP) — using approximate IP location...');
+            const coords = await getLocationByIP();
+            if (coords) await doSearch(coords.lat, coords.lng);
+            else setStatus('Could not determine location. Try ZIP search.');
+          }
+        );
+      } else {
+        const coords = await getLocationByIP();
+        if (coords) await doSearch(coords.lat, coords.lng);
+        else setStatus('Could not determine location. Try ZIP search.');
+      }
     }
 
     async function searchByZip() {
