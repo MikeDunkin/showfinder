@@ -18,6 +18,14 @@ jobs:
       - name: Install dependencies
         run: pip install httpx beautifulsoup4 lxml
 
+      - name: Check secrets
+        env:
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          API_URL: ${{ secrets.CARSHOW_API_URL }}
+        run: |
+          echo "SCRAPERAPI_KEY set: ${{ secrets.SCRAPERAPI_KEY != '' }}"
+          echo "API_URL set: ${{ secrets.CARSHOW_API_URL != '' }}"
+
       - name: Run scraper
         env:
           API_URL: ${{ secrets.CARSHOW_API_URL }}
