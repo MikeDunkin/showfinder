@@ -34,7 +34,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 def build_url(target_url: str, scraperapi_key: str | None) -> str:
     if scraperapi_key:
-        return f"https://api.scraperapi.com?api_key={scraperapi_key}&render=true&url={target_url}"
+        return f"https://api.scraperapi.com?api_key={scraperapi_key}&url={target_url}"
     return target_url
 
 
@@ -58,38 +58,55 @@ def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
 
     soup = BeautifulSoup(res.text, "lxml")
 
-    # Debug: print snippet on first parse failure
-    if not soup.select("div.event-item"):
-        print(f"  DEBUG: no div.event-item found. Page snippet:")
-        print(res.text[:1500])
+    # Try multiple selectors used by The Events Calendar plugin
+    items = (
+        soup.select("article.type-tribe_events") or
+        soup.select("article.car-show") or
+        soup.select(".car-show") or
+        soup.select(".tribe-events-list article")
+    )
+
+    if not items:
+        print(f"  DEBUG: no event items found. Trying to find any articles:")
+        for tag in soup.find_all("article")[:2]:
+            print(f"    article classes: {tag.get('class')}")
+        return []
 
     shows: list[dict] = []
 
-    for item in soup.select("div.event-item"):
-        link = item.select_one("h3 a")
+    for item in items:
+        link = (
+            item.select_one(".tribe-event-url") or
+            item.select_one("h2 a") or
+            item.select_one("h3 a")
+        )
         if not link:
             continue
 
-        date_el = item.select_one("div.event-date span.time")
-        venue_el = item.select_one("p.venue")
-        location_el = item.select_one("p.location")
+        date_el = item.select_one(".tribe-events-schedule abbr") or item.select_one("abbr.tribe-events-abbr")
+        venue_el = item.select_one(".tribe-venue") or item.select_one(".tribe-events-venue-details")
+        city_el = item.select_one(".tribe-city")
 
-        date_raw = date_el.get_text(strip=True) if date_el else None
+        date_raw = date_el.get("title") or date_el.get_text(strip=True) if date_el else None
         venue = venue_el.get_text(strip=True) if venue_el else None
 
         city, state_abbr = None, None
-        if location_el:
-            parts = [p.strip() for p in location_el.get_text(strip=True).split(",")]
-            if len(parts) >= 2:
-                city = parts[0]
-                state_abbr = parts[1].strip()
+        if city_el:
+            city = city_el.get_text(strip=True).rstrip(",").strip()
+        else:
+            loc_el = item.select_one(".tribe-events-venue-details")
+            if loc_el:
+                parts = [p.strip() for p in loc_el.get_text(strip=True).split(",")]
+                if len(parts) >= 2:
+                    city = parts[0]
+                    state_abbr = parts[1].strip()
 
         shows.append({
             "name": link.get_text(strip=True),
             "date": date_raw,
             "venue": venue,
             "city": city,
-            "state": state_abbr,
+            "state": state_abbr or state,
             "url": link.get("href", ""),
         })
 
