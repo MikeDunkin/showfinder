@@ -60,46 +60,30 @@ def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
     items = soup.select("article.type-tribe_events")
 
     if not items:
-        print(f"  DEBUG: no article.type-tribe_events found — printing first article classes:")
-        for tag in soup.find_all("article")[:3]:
-            print(f"    {tag.get('class')}")
         return []
-
-    # One-time debug: print inner HTML of first article
-    print(f"  DEBUG first article:\n{items[0].prettify()[:2000]}")
 
     shows: list[dict] = []
 
     for item in items:
-        link = item.select_one(".tribe-event-url") or item.select_one("h2 a") or item.select_one("h3 a")
+        link = item.select_one("a.tribe-events-calendar-list__event-title-link")
         if not link:
             continue
 
-        # Date: The Events Calendar uses abbr with title attribute
-        date_el = item.select_one("abbr.tribe-events-abbr") or item.select_one(".tribe-events-schedule abbr")
-        date_raw = date_el.get("title") if date_el else None
-        if not date_raw:
-            date_el2 = item.select_one(".tribe-events-schedule")
-            date_raw = date_el2.get_text(strip=True) if date_el2 else None
+        date_el = item.select_one("span.tribe-event-date-start")
+        date_raw = date_el.get_text(strip=True) if date_el else None
 
-        # Venue + City from address block
-        venue_el = item.select_one(".tribe-venue")
+        venue_el = item.select_one("span.tribe-events-calendar-list__event-venue-title")
         venue = venue_el.get_text(strip=True) if venue_el else None
 
-        city_el = item.select_one(".tribe-city")
-        state_el = item.select_one(".tribe-stateprovince")
-        city = city_el.get_text(strip=True).rstrip(",") if city_el else None
-        state_abbr = state_el.get_text(strip=True) if state_el else None
-
-        # Fallback: parse the full address block
-        if not city:
-            addr_el = item.select_one(".tribe-address") or item.select_one(".tribe-events-venue-details")
-            if addr_el:
-                text = addr_el.get_text(separator=" ", strip=True)
-                parts = [p.strip() for p in text.split(",")]
-                if len(parts) >= 2:
-                    city = parts[-2].split()[-1] if parts[-2].split() else None
-                    state_abbr = parts[-1].split()[0] if parts[-1].split() else None
+        city, state_abbr = None, None
+        addr_el = item.select_one("span.tribe-events-calendar-list__event-venue-address")
+        if addr_el:
+            # Format: "City, ST, United States"
+            addr_text = addr_el.get_text(separator=" ", strip=True)
+            parts = [p.strip() for p in addr_text.split(",")]
+            if len(parts) >= 2:
+                city = parts[0]
+                state_abbr = parts[1].strip().split()[0] if parts[1].strip() else None
 
         shows.append({
             "name": link.get_text(strip=True),
