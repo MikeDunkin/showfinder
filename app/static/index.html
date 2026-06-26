@@ -75,6 +75,19 @@
       text-decoration: none;
     }
     .leaflet-popup-content .actions a:hover { text-decoration: underline; }
+
+    .car-marker {
+      background: #1a1a2e;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
   </style>
 </head>
 <body>
@@ -97,6 +110,14 @@
     }).addTo(map);
 
     let markers = [];
+
+    const carIcon = L.divIcon({
+      className: '',
+      html: '<div class="car-marker">🚗</div>',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+      popupAnchor: [0, -18]
+    });
 
     function setStatus(msg) {
       document.getElementById('status').textContent = msg;
@@ -134,7 +155,7 @@
           : encodeURIComponent(venue);
         const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${dirTarget}`;
 
-        const marker = L.marker([lat, lng]).addTo(map);
+        const marker = L.marker([lat, lng], { icon: carIcon }).addTo(map);
         marker.bindPopup(`
           <strong>${show.name}</strong>
           <div class="meta">
