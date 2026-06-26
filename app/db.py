@@ -18,5 +18,15 @@ async def get_db():
 
 
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    import asyncio
+    for attempt in range(10):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            print("[db] connected and tables ready", flush=True)
+            return
+        except Exception as e:
+            wait = 2 ** attempt
+            print(f"[db] connection failed (attempt {attempt + 1}/10): {e} — retrying in {wait}s", flush=True)
+            await asyncio.sleep(wait)
+    raise RuntimeError("Could not connect to database after 10 attempts")
