@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.services import eventbrite, geo
+from app.services import events, geo
 
 router = APIRouter()
 
@@ -10,7 +10,7 @@ async def get_shows_by_coords(
     lng: float = Query(..., description="Longitude"),
     radius: int = Query(25, description="Search radius in miles"),
 ):
-    return await eventbrite.find_car_shows(lat, lng, radius)
+    return await events.find_car_shows(lat, lng, radius)
 
 
 @router.get("/by-zip")
@@ -21,4 +21,4 @@ async def get_shows_by_zip(
     coords = await geo.zip_to_coords(zip_code)
     if not coords:
         raise HTTPException(status_code=404, detail=f"Could not resolve ZIP code: {zip_code}")
-    return await eventbrite.find_car_shows(coords["lat"], coords["lng"], radius)
+    return await events.find_car_shows(coords["lat"], coords["lng"], radius)
