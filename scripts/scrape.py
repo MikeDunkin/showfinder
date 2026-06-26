@@ -57,46 +57,36 @@ def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
         return []
 
     soup = BeautifulSoup(res.text, "lxml")
-
-    # Try multiple selectors used by The Events Calendar plugin
-    items = (
-        soup.select("article.type-tribe_events") or
-        soup.select("article.car-show") or
-        soup.select(".car-show") or
-        soup.select(".tribe-events-list article")
-    )
+    items = soup.select("div.event-item")
 
     if not items:
-        print(f"  DEBUG: no event items found. Trying to find any articles:")
-        for tag in soup.find_all("article")[:2]:
-            print(f"    article classes: {tag.get('class')}")
+        print(f"  DEBUG: no div.event-item found in response")
         return []
 
     shows: list[dict] = []
 
     for item in items:
-        link = (
-            item.select_one(".tribe-event-url") or
-            item.select_one("h2 a") or
-            item.select_one("h3 a")
-        )
+        link = item.select_one("h3 a")
         if not link:
             continue
 
-        date_el = item.select_one(".tribe-events-schedule abbr") or item.select_one("abbr.tribe-events-abbr")
-        venue_el = item.select_one(".tribe-venue") or item.select_one(".tribe-events-venue-details")
-        city_el = item.select_one(".tribe-city")
+        date_el = item.select_one("div.event-date")
+        loc_el = item.select_one("div.event-location")
 
-        date_raw = date_el.get("title") or date_el.get_text(strip=True) if date_el else None
-        venue = venue_el.get_text(strip=True) if venue_el else None
+        date_raw = date_el.get_text(strip=True) if date_el else None
 
-        city, state_abbr = None, None
-        if city_el:
-            city = city_el.get_text(strip=True).rstrip(",").strip()
-        else:
-            loc_el = item.select_one(".tribe-events-venue-details")
-            if loc_el:
-                parts = [p.strip() for p in loc_el.get_text(strip=True).split(",")]
+        city, state_abbr, venue = None, None, None
+        if loc_el:
+            # Format: "Venue Name\nCity, ST, United States"
+            lines = [l.strip() for l in loc_el.get_text(separator="\n", strip=True).split("\n") if l.strip()]
+            if len(lines) >= 2:
+                venue = lines[0]
+                parts = [p.strip() for p in lines[-1].split(",")]
+                if len(parts) >= 2:
+                    city = parts[0]
+                    state_abbr = parts[1].strip()
+            elif len(lines) == 1:
+                parts = [p.strip() for p in lines[0].split(",")]
                 if len(parts) >= 2:
                     city = parts[0]
                     state_abbr = parts[1].strip()
