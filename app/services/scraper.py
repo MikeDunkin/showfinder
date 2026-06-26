@@ -1,12 +1,9 @@
 import math
 import asyncio
-import logging
 from datetime import datetime, timedelta
 
 import httpx
 from bs4 import BeautifulSoup
-
-logger = logging.getLogger(__name__)
 
 STATE_SLUGS = {
     "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
@@ -70,7 +67,7 @@ async def _scrape_state(state_slug: str) -> list[dict]:
     url = f"https://carcruisefinder.com/car-shows/category/{state_slug}/"
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         res = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        logger.info("Scrape %s -> HTTP %s", url, res.status_code)
+        print(f"[scraper] GET {url} -> {res.status_code}", flush=True)
         if res.status_code != 200:
             return []
 
@@ -83,7 +80,7 @@ async def _scrape_state(state_slug: str) -> list[dict]:
         soup.select(".entry-content li") or
         soup.select("li")
     )
-    logger.info("Found %d candidate elements on %s", len(candidates), url)
+    print(f"[scraper] selector matched {len(candidates)} elements", flush=True)
 
     shows = []
     for el in candidates:
@@ -122,7 +119,7 @@ async def _scrape_state(state_slug: str) -> list[dict]:
             "lng": None,
         })
 
-    logger.info("Parsed %d shows for %s", len(shows), state_slug)
+    print(f"[scraper] parsed {len(shows)} shows for {state_slug}", flush=True)
     _shows_cache[state_slug] = (datetime.now(), shows)
     return shows
 
