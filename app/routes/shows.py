@@ -1,31 +1,28 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.db import get_db
 from app.services import geo
 
 router = APIRouter()
 
-_SEARCH_SQL = """
-    WITH distances AS (
-        SELECT id, name, date, venue, city, state, zip_code, lat, lng, url, description,
-            ROUND(CAST(
-                3956 * 2 * asin(sqrt(
-                    power(sin(radians(lat - :lat) / 2), 2) +
-                    cos(radians(:lat)) * cos(radians(lat)) *
-                    power(sin(radians(lng - :lng) / 2), 2)
-                ))
-            AS NUMERIC), 1) AS distance_miles
-        FROM car_shows
-        WHERE lat IS NOT NULL AND lng IS NOT NULL
-    )
-    SELECT * FROM distances WHERE distance_miles <= :radius ORDER BY distance_miles
-"""
+
+def _fmt(show: dict) -> dict:
+    show["id"] = str(show.pop("_id"))
+    coords = show.pop("location", {}).get("coordinates", [None, None])
+    show["lng"], show["lat"] = coords[0], coords[1]
+    return show
 
 
-async def _search(lat: float, lng: float, radius: int, db: AsyncSession) -> list[dict]:
-    result = await db.execute(text(_SEARCH_SQL), {"lat": lat, "lng": lng, "radius": radius})
-    return [dict(row._mapping) for row in result]
+async def _search(lat: float, lng: float, radius: int, db: AsyncIOMotorDatabase) -> list[dict]:
+    cursor = db.car_shows.find({
+        "location": {
+            "$nearSphere": {
+                "$geometry": {"type": "Point", "coordinates": [lng, lat]},
+                "$maxDistance": radius * 1609.34,
+            }
+        }
+    }).limit(50)
+    return [_fmt(s) async for s in cursor]
 
 
 @router.get("/")
@@ -33,7 +30,7 @@ async def get_shows_by_coords(
     lat: float = Query(..., description="Latitude"),
     lng: float = Query(..., description="Longitude"),
     radius: int = Query(25, description="Search radius in miles"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     return await _search(lat, lng, radius, db)
 
@@ -42,7 +39,7 @@ async def get_shows_by_coords(
 async def get_shows_by_zip(
     zip_code: str = Query(..., description="US ZIP code"),
     radius: int = Query(25, description="Search radius in miles"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     coords = await geo.zip_to_coords(zip_code)
     if not coords:

@@ -19,11 +19,11 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            - name: DATABASE_URL
+            - name: MONGODB_URL
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secret
-                  key: DATABASE_URL
+                  name: mongodb-secret
+                  key: MONGODB_URL
           readinessProbe:
             httpGet:
               path: /health

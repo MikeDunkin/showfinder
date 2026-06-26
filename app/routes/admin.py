@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.db import get_db
-from app.models import CarShow
 from app.services.geo import geocode_city
 
 router = APIRouter()
@@ -23,23 +22,29 @@ class ShowCreate(BaseModel):
 
 
 @router.post("/shows")
-async def add_show(show: ShowCreate, db: AsyncSession = Depends(get_db)):
-    if (show.lat is None or show.lng is None) and show.city and show.state:
+async def add_show(show: ShowCreate, db: AsyncIOMotorDatabase = Depends(get_db)):
+    data = show.model_dump()
+    lat = data.pop("lat")
+    lng = data.pop("lng")
+
+    if (lat is None or lng is None) and show.city and show.state:
         coords = await geocode_city(show.city, show.state)
         if coords:
-            show.lat, show.lng = coords
+            lat, lng = coords
 
-    db_show = CarShow(**show.model_dump())
-    db.add(db_show)
-    await db.commit()
-    await db.refresh(db_show)
-    return db_show
+    if lat is not None and lng is not None:
+        data["location"] = {"type": "Point", "coordinates": [lng, lat]}
+
+    result = await db.car_shows.insert_one(data)
+    return {"id": str(result.inserted_id), **data}
 
 
 @router.delete("/shows/{show_id}")
-async def delete_show(show_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(delete(CarShow).where(CarShow.id == show_id))
-    await db.commit()
-    if result.rowcount == 0:
+async def delete_show(show_id: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+    try:
+        result = await db.car_shows.delete_one({"_id": ObjectId(show_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid show ID")
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Show not found")
     return {"deleted": show_id}

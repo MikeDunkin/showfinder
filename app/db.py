@@ -1,32 +1,26 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+import asyncio
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://carshow:Ch@ngeMe2026!@postgres:5432/carshowdb")
-
-engine = create_async_engine(DATABASE_URL)
-AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://mongodb:27017")
+_client: AsyncIOMotorClient | None = None
 
 
-class Base(DeclarativeBase):
-    pass
-
-
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
+def get_db() -> AsyncIOMotorDatabase:
+    return _client.carshowdb
 
 
 async def init_db():
-    import asyncio
+    global _client
     for attempt in range(10):
         try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            print("[db] connected and tables ready", flush=True)
+            _client = AsyncIOMotorClient(MONGODB_URL, serverSelectionTimeoutMS=5000)
+            await _client.server_info()
+            await _client.carshowdb.car_shows.create_index([("location", "2dsphere")])
+            print("[db] MongoDB connected and 2dsphere index ready", flush=True)
             return
         except Exception as e:
             wait = 2 ** attempt
-            print(f"[db] connection failed (attempt {attempt + 1}/10): {e} — retrying in {wait}s", flush=True)
+            print(f"[db] attempt {attempt + 1}/10 failed: {e} — retrying in {wait}s", flush=True)
             await asyncio.sleep(wait)
-    raise RuntimeError("Could not connect to database after 10 attempts")
+    raise RuntimeError("Could not connect to MongoDB after 10 attempts")
