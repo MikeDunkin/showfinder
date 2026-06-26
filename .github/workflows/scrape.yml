@@ -21,7 +21,9 @@ jobs:
       - name: Run scraper
         env:
           API_URL: ${{ secrets.CARSHOW_API_URL }}
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
         run: |
           python scripts/scrape.py \
             --states NJ NY PA CT MA MD VA \
-            --api "$API_URL"
+            --api "$API_URL" \
+            --scraperapi-key "$SCRAPERAPI_KEY"

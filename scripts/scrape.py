@@ -31,15 +31,22 @@ STATE_SLUGS = {
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 
-def scrape_state(state: str) -> list[dict]:
+def build_url(target_url: str, scraperapi_key: str | None) -> str:
+    if scraperapi_key:
+        return f"https://api.scraperapi.com?api_key={scraperapi_key}&url={target_url}"
+    return target_url
+
+
+def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
     slug = STATE_SLUGS.get(state.upper())
     if not slug:
         print(f"Unknown state: {state}")
         return []
 
-    url = f"https://carcruisefinder.com/car-shows/category/{slug}/"
+    target = f"https://carcruisefinder.com/car-shows/category/{slug}/"
+    url = build_url(target, scraperapi_key)
     try:
-        res = httpx.get(url, headers=HEADERS, follow_redirects=True, timeout=15)
+        res = httpx.get(url, headers=HEADERS, follow_redirects=True, timeout=30)
     except Exception as e:
         print(f"  Error fetching {state}: {e}")
         return []
@@ -49,7 +56,7 @@ def scrape_state(state: str) -> list[dict]:
         return []
 
     soup = BeautifulSoup(res.text, "lxml")
-    shows = []
+    shows: list[dict] = []
 
     for li in soup.select("li"):
         h3 = li.find("h3")
@@ -98,12 +105,17 @@ def main():
                         help="State abbreviations to scrape")
     parser.add_argument("--api", default="http://34.138.72.24",
                         help="Carshowfinder API base URL")
+    parser.add_argument("--scraperapi-key", default=None,
+                        help="ScraperAPI key for bypassing IP blocks")
     args = parser.parse_args()
+
+    if args.scraperapi_key:
+        print("Using ScraperAPI proxy")
 
     total_added = 0
     for state in args.states:
         print(f"\nScraping {state}...")
-        shows = scrape_state(state)
+        shows = scrape_state(state, args.scraperapi_key)
         print(f"  Found {len(shows)} shows")
         for show in shows:
             status = post_show(args.api, show)
