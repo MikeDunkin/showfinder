@@ -44,7 +44,7 @@ async def add_show(show: ShowCreate, db: AsyncIOMotorDatabase = Depends(get_db))
         return {"id": str(existing["_id"]), "duplicate": True}
 
     result = await db.car_shows.insert_one(data)
-    return {"id": str(result.inserted_id), **data}
+    return {"id": str(result.inserted_id)}
 
 
 @router.post("/geocode-pending")
