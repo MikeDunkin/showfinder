@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import os
 import time
 import httpx
 from bs4 import BeautifulSoup
@@ -109,13 +110,16 @@ def main():
                         help="ScraperAPI key for bypassing IP blocks")
     args = parser.parse_args()
 
-    if args.scraperapi_key:
-        print("Using ScraperAPI proxy")
+    scraperapi_key = args.scraperapi_key or os.getenv("SCRAPERAPI_KEY")
+    if scraperapi_key:
+        print(f"Using ScraperAPI proxy (key length: {len(scraperapi_key)})")
+    else:
+        print("WARNING: No ScraperAPI key — requests may be blocked")
 
     total_added = 0
     for state in args.states:
         print(f"\nScraping {state}...")
-        shows = scrape_state(state, args.scraperapi_key)
+        shows = scrape_state(state, scraperapi_key)
         print(f"  Found {len(shows)} shows")
         for show in shows:
             status = post_show(args.api, show)
