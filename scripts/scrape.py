@@ -59,23 +59,24 @@ def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
     soup = BeautifulSoup(res.text, "lxml")
     shows: list[dict] = []
 
-    for li in soup.select("li"):
-        h3 = li.find("h3")
-        if not h3:
-            continue
-        link = h3.find("a")
+    for item in soup.select("div.event-item"):
+        link = item.select_one("h3 a")
         if not link:
             continue
 
-        paragraphs = li.find_all("p")
-        venue = paragraphs[0].get_text(strip=True) if len(paragraphs) > 0 else None
-        city_state_raw = paragraphs[1].get_text(strip=True) if len(paragraphs) > 1 else ""
-        date_raw = paragraphs[2].get_text(strip=True) if len(paragraphs) > 2 else None
+        date_el = item.select_one("div.event-date span.time")
+        venue_el = item.select_one("p.venue")
+        location_el = item.select_one("p.location")
+
+        date_raw = date_el.get_text(strip=True) if date_el else None
+        venue = venue_el.get_text(strip=True) if venue_el else None
 
         city, state_abbr = None, None
-        parts = [p.strip() for p in city_state_raw.split(",")]
-        if len(parts) >= 2:
-            city, state_abbr = parts[0], parts[1].strip()
+        if location_el:
+            parts = [p.strip() for p in location_el.get_text(strip=True).split(",")]
+            if len(parts) >= 2:
+                city = parts[0]
+                state_abbr = parts[1].strip()
 
         shows.append({
             "name": link.get_text(strip=True),
