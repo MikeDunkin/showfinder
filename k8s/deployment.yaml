@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carshowfinder
+  namespace: carshowfinder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: carshowfinder
+  template:
+    metadata:
+      labels:
+        app: carshowfinder
+    spec:
+      containers:
+        - name: carshowfinder
+          image: us-east1-docker.pkg.dev/richkube-2026/testkube-images/carshowfinder:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: carshowfinder-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10

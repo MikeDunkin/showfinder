@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: carshowfinder
+  namespace: carshowfinder
+spec:
+  selector:
+    app: carshowfinder
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: LoadBalancer
