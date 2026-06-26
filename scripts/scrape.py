@@ -65,6 +65,9 @@ def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
             print(f"    {tag.get('class')}")
         return []
 
+    # One-time debug: print inner HTML of first article
+    print(f"  DEBUG first article:\n{items[0].prettify()[:2000]}")
+
     shows: list[dict] = []
 
     for item in items:
