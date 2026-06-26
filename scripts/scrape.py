@@ -34,7 +34,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 def build_url(target_url: str, scraperapi_key: str | None) -> str:
     if scraperapi_key:
-        return f"https://api.scraperapi.com?api_key={scraperapi_key}&url={target_url}"
+        return f"https://api.scraperapi.com?api_key={scraperapi_key}&render=true&url={target_url}"
     return target_url
 
 
@@ -57,6 +57,12 @@ def scrape_state(state: str, scraperapi_key: str | None = None) -> list[dict]:
         return []
 
     soup = BeautifulSoup(res.text, "lxml")
+
+    # Debug: print snippet on first parse failure
+    if not soup.select("div.event-item"):
+        print(f"  DEBUG: no div.event-item found. Page snippet:")
+        print(res.text[:1500])
+
     shows: list[dict] = []
 
     for item in soup.select("div.event-item"):
