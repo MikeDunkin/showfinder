@@ -35,6 +35,10 @@ async def add_show(show: ShowCreate, db: AsyncIOMotorDatabase = Depends(get_db))
     if lat is not None and lng is not None:
         data["location"] = {"type": "Point", "coordinates": [lng, lat]}
 
+    existing = await db.car_shows.find_one({"name": show.name, "date": show.date})
+    if existing:
+        return {"id": str(existing["_id"]), "duplicate": True}
+
     result = await db.car_shows.insert_one(data)
     return {"id": str(result.inserted_id), **data}
 
