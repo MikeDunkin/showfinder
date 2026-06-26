@@ -28,9 +28,12 @@ async def add_show(show: ShowCreate, db: AsyncIOMotorDatabase = Depends(get_db))
     lng = data.pop("lng")
 
     if (lat is None or lng is None) and show.city and show.state:
-        coords = await geocode_city(show.city, show.state)
-        if coords:
-            lat, lng = coords
+        try:
+            coords = await geocode_city(show.city, show.state)
+            if coords:
+                lat, lng = coords
+        except Exception:
+            pass
 
     if lat is not None and lng is not None:
         data["location"] = {"type": "Point", "coordinates": [lng, lat]}
