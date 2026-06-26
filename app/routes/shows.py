@@ -4,6 +4,16 @@ from app.services import scraper, geo
 router = APIRouter()
 
 
+@router.get("/debug")
+async def debug_scrape(state: str = Query("NJ", description="Two-letter state abbreviation")):
+    """Returns raw scraped shows before geocoding — use to verify the scraper is working."""
+    slug = scraper.STATE_SLUGS.get(state.upper())
+    if not slug:
+        raise HTTPException(status_code=400, detail=f"Unknown state: {state}")
+    shows = await scraper._scrape_state(slug)
+    return {"state": state, "count": len(shows), "shows": shows[:10]}
+
+
 @router.get("/")
 async def get_shows_by_coords(
     lat: float = Query(..., description="Latitude"),

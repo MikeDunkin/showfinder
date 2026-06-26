@@ -1,9 +1,12 @@
 import math
 import asyncio
+import logging
 from datetime import datetime, timedelta
 
 import httpx
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 STATE_SLUGS = {
     "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
@@ -67,24 +70,40 @@ async def _scrape_state(state_slug: str) -> list[dict]:
     url = f"https://carcruisefinder.com/car-shows/category/{state_slug}/"
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         res = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        logger.info("Scrape %s -> HTTP %s", url, res.status_code)
         if res.status_code != 200:
             return []
 
     soup = BeautifulSoup(res.text, "lxml")
-    shows = []
 
-    for li in soup.select("li"):
-        h3 = li.find("h3")
-        if not h3:
+    # Try multiple selectors to handle different page structures
+    candidates = (
+        soup.select("article") or
+        soup.select(".tribe-events-calendar li") or
+        soup.select(".entry-content li") or
+        soup.select("li")
+    )
+    logger.info("Found %d candidate elements on %s", len(candidates), url)
+
+    shows = []
+    for el in candidates:
+        h = el.find(["h2", "h3", "h4"])
+        if not h:
             continue
-        link = h3.find("a")
+        link = h.find("a")
         if not link:
             continue
 
-        paragraphs = li.find_all("p")
-        venue = paragraphs[0].get_text(strip=True) if len(paragraphs) > 0 else None
-        city_state_raw = paragraphs[1].get_text(strip=True) if len(paragraphs) > 1 else ""
-        date_raw = paragraphs[2].get_text(strip=True) if len(paragraphs) > 2 else None
+        # Gather all text nodes in <p> or <span> tags as metadata
+        paragraphs = el.find_all(["p", "span", "div"], recursive=False)
+        if not paragraphs:
+            paragraphs = el.find_all(["p"])
+
+        texts = [t.get_text(strip=True) for t in paragraphs if t.get_text(strip=True)]
+
+        venue = texts[0] if len(texts) > 0 else None
+        city_state_raw = texts[1] if len(texts) > 1 else ""
+        date_raw = texts[2] if len(texts) > 2 else None
 
         city, state_abbr = None, None
         parts = [p.strip() for p in city_state_raw.split(",")]
@@ -103,6 +122,7 @@ async def _scrape_state(state_slug: str) -> list[dict]:
             "lng": None,
         })
 
+    logger.info("Parsed %d shows for %s", len(shows), state_slug)
     _shows_cache[state_slug] = (datetime.now(), shows)
     return shows
 
