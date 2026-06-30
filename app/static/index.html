@@ -88,6 +88,23 @@
       font-size: 16px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.4);
     }
+
+    .coffee-marker {
+      background: #ff6e00;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+
+    .btn-dunkin { background: #ff6e00; color: #fff; }
+    .btn-dunkin:hover { background: #e05e00; }
+    .btn-dunkin.active { background: #a03e00; }
   </style>
 </head>
 <body>
@@ -99,6 +116,7 @@
       <input type="number" id="radius" value="25" min="5" max="100" placeholder="Radius (miles)" />
       <button class="btn btn-primary" onclick="searchByZip()">Search by ZIP</button>
       <button class="btn btn-gps" onclick="searchByGPS()">Use My Location</button>
+      <button class="btn btn-dunkin" id="dunkin-btn" onclick="toggleDunkin()">☕ Show Dunkin' Locations</button>
       <div id="status"></div>
     </div>
   </div>
@@ -110,6 +128,17 @@
     }).addTo(map);
 
     let markers = [];
+    let dunkinMarkers = [];
+    let dunkinVisible = false;
+    let lastLat = 39.5, lastLng = -98.35;
+
+    const coffeeIcon = L.divIcon({
+      className: '',
+      html: '<div class="coffee-marker">☕</div>',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -16]
+    });
 
     const carIcon = L.divIcon({
       className: '',
@@ -184,7 +213,60 @@
       return null;
     }
 
+    function clearDunkin() {
+      dunkinMarkers.forEach(m => map.removeLayer(m));
+      dunkinMarkers = [];
+    }
+
+    async function loadDunkin(lat, lng, radius) {
+      clearDunkin();
+      const radiusMeters = radius * 1609;
+      const query = `[out:json][timeout:15];
+node["brand"="Dunkin'"]["amenity"="fast_food"](around:${radiusMeters},${lat},${lng});
+out body;`;
+      try {
+        const res = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: query
+        });
+        const data = await res.json();
+        data.elements.forEach(el => {
+          const name = el.tags.name || "Dunkin'";
+          const address = [el.tags['addr:housenumber'], el.tags['addr:street'], el.tags['addr:city']]
+            .filter(Boolean).join(' ') || 'Dunkin\' Donuts';
+          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${el.lat},${el.lon}`;
+          const marker = L.marker([el.lat, el.lon], { icon: coffeeIcon }).addTo(map);
+          marker.bindPopup(`
+            <strong>${name}</strong>
+            <div class="meta">📍 ${address}</div>
+            <div class="actions">
+              <a href="${directionsUrl}" target="_blank">🗺 Directions</a>
+            </div>
+          `);
+          dunkinMarkers.push(marker);
+        });
+      } catch {
+        setStatus('Could not load Dunkin\' locations.');
+      }
+    }
+
+    async function toggleDunkin() {
+      const btn = document.getElementById('dunkin-btn');
+      dunkinVisible = !dunkinVisible;
+      if (dunkinVisible) {
+        btn.classList.add('active');
+        btn.textContent = "☕ Hide Dunkin' Locations";
+        const radius = document.getElementById('radius').value;
+        await loadDunkin(lastLat, lastLng, radius);
+      } else {
+        btn.classList.remove('active');
+        btn.textContent = "☕ Show Dunkin' Locations";
+        clearDunkin();
+      }
+    }
+
     async function doSearch(lat, lng) {
+      lastLat = lat; lastLng = lng;
       const radius = document.getElementById('radius').value;
       setStatus('Searching for car shows...');
       try {
@@ -192,6 +274,7 @@
         if (!res.ok) { setStatus('API error — check server logs.'); return; }
         const shows = await res.json();
         displayShows(shows, lat, lng);
+        if (dunkinVisible) await loadDunkin(lat, lng, radius);
       } catch {
         setStatus('Error fetching shows.');
       }
