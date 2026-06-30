@@ -220,33 +220,44 @@
 
     async function loadDunkin(lat, lng, radius) {
       clearDunkin();
-      const radiusMeters = radius * 1609;
-      const query = `[out:json][timeout:15];
-node["brand"="Dunkin'"]["amenity"="fast_food"](around:${radiusMeters},${lat},${lng});
-out body;`;
+      const radiusMeters = Math.round(radius * 1609);
+      const query = `[out:json][timeout:25];
+(
+  node["name"~"Dunkin",i](around:${radiusMeters},${lat},${lng});
+  way["name"~"Dunkin",i](around:${radiusMeters},${lat},${lng});
+);
+out center;`;
+      setStatus("Loading Dunkin' locations...");
       try {
         const res = await fetch('https://overpass-api.de/api/interpreter', {
           method: 'POST',
-          body: query
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'data=' + encodeURIComponent(query)
         });
         const data = await res.json();
         data.elements.forEach(el => {
+          const elLat = el.lat ?? el.center?.lat;
+          const elLon = el.lon ?? el.center?.lon;
+          if (!elLat || !elLon) return;
           const name = el.tags.name || "Dunkin'";
           const address = [el.tags['addr:housenumber'], el.tags['addr:street'], el.tags['addr:city']]
-            .filter(Boolean).join(' ') || 'Dunkin\' Donuts';
-          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${el.lat},${el.lon}`;
-          const marker = L.marker([el.lat, el.lon], { icon: coffeeIcon }).addTo(map);
+            .filter(Boolean).join(' ') || '';
+          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${elLat},${elLon}`;
+          const marker = L.marker([elLat, elLon], { icon: coffeeIcon }).addTo(map);
           marker.bindPopup(`
             <strong>${name}</strong>
-            <div class="meta">📍 ${address}</div>
+            ${address ? `<div class="meta">📍 ${address}</div>` : ''}
             <div class="actions">
               <a href="${directionsUrl}" target="_blank">🗺 Directions</a>
             </div>
           `);
           dunkinMarkers.push(marker);
         });
+        setStatus(dunkinMarkers.length
+          ? `Found ${dunkinMarkers.length} Dunkin' location(s).`
+          : "No Dunkin' locations found in this area.");
       } catch {
-        setStatus('Could not load Dunkin\' locations.');
+        setStatus("Could not load Dunkin' locations.");
       }
     }
 
