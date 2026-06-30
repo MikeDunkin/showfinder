@@ -1,24 +1,33 @@
 import httpx
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+]
 US_BBOX = "18.91,-171.79,71.38,-66.96"  # south,west,north,east — covers contiguous US + AK + HI
 
 
 async def fetch_all_dunkin_us() -> list[dict]:
-    query = f"""[out:json][timeout:120];
-(
-  node["name"~"Dunkin",i]({US_BBOX});
-  way["name"~"Dunkin",i]({US_BBOX});
-);
-out center;"""
+    query = (
+        f"[out:json][timeout:120];"
+        f"(node[\"name\"~\"Dunkin\",i]({US_BBOX});"
+        f"way[\"name\"~\"Dunkin\",i]({US_BBOX}););"
+        f"out center;"
+    )
+    last_exc: Exception | None = None
     async with httpx.AsyncClient(timeout=130) as client:
-        res = await client.get(
-            OVERPASS_URL,
-            params={"data": query},
-            headers={"User-Agent": "carshow-finder/1.0"},
-        )
-        res.raise_for_status()
-        data = res.json()
+        for url in OVERPASS_ENDPOINTS:
+            try:
+                res = await client.get(url, params={"data": query}, headers={"User-Agent": "carshow-finder/1.0"})
+                res.raise_for_status()
+                data = res.json()
+                if data.get("elements"):
+                    break
+            except Exception as e:
+                last_exc = e
+                continue
+        else:
+            raise last_exc or RuntimeError("All Overpass endpoints failed")
 
     locations = []
     seen: set[str] = set()
