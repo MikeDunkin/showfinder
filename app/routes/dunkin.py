@@ -14,7 +14,7 @@ def _fmt(loc: dict) -> dict:
     return loc
 
 
-@router.get("/")
+@router.get("")
 async def get_dunkin(
     lat: float = Query(...),
     lng: float = Query(...),

@@ -7,8 +7,8 @@ US_BBOX = "18.91,-171.79,71.38,-66.96"  # south,west,north,east — covers conti
 async def fetch_all_dunkin_us() -> list[dict]:
     query = f"""[out:json][timeout:120];
 (
-  node["brand:wikidata"="Q1141226"]({US_BBOX});
-  way["brand:wikidata"="Q1141226"]({US_BBOX});
+  node["name"~"Dunkin",i]({US_BBOX});
+  way["name"~"Dunkin",i]({US_BBOX});
 );
 out center;"""
     async with httpx.AsyncClient(timeout=130) as client:
