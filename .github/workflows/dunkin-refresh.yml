@@ -19,20 +19,41 @@ jobs:
 
           US_BBOX = "18.91,-171.79,71.38,-66.96"
           query = (
-            f"[out:json][timeout:120];"
-            f"(node[\"name\"~\"Dunkin\",i]({US_BBOX});"
-            f"way[\"name\"~\"Dunkin\",i]({US_BBOX}););"
-            f"out center;"
+            "[out:json][timeout:180];"
+            "(node[\"name\"~\"Dunkin\",i](" + US_BBOX + ");"
+            "way[\"name\"~\"Dunkin\",i](" + US_BBOX + "););"
+            "out center;"
           )
 
-          r = httpx.get(
+          ENDPOINTS = [
             "https://overpass-api.de/api/interpreter",
-            params={"data": query},
-            headers={"User-Agent": "carshow-finder/1.0"},
-            timeout=130,
-          )
-          r.raise_for_status()
-          data = r.json()
+            "https://overpass.kumi.systems/api/interpreter",
+          ]
+
+          data = None
+          for url in ENDPOINTS:
+              try:
+                  print(f"Trying {url}...")
+                  r = httpx.get(
+                    url,
+                    params={"data": query},
+                    headers={"User-Agent": "carshow-finder/1.0"},
+                    timeout=200,
+                  )
+                  r.raise_for_status()
+                  candidate = r.json()
+                  if candidate.get("elements"):
+                      data = candidate
+                      print(f"Got {len(data['elements'])} elements from {url}")
+                      break
+                  else:
+                      print(f"Empty response from {url}, trying next...")
+              except Exception as e:
+                  print(f"Error from {url}: {e}")
+
+          if not data or not data.get("elements"):
+              print("ERROR: All Overpass endpoints returned empty — aborting")
+              sys.exit(1)
 
           locations = []
           seen = set()
@@ -60,7 +81,7 @@ jobs:
                   "lng": lon,
               })
 
-          print(f"Fetched {len(locations)} locations")
+          print(f"Processed {len(locations)} unique locations")
           with open("dunkin_locations.json", "w") as f:
               json.dump(locations, f)
           EOF
