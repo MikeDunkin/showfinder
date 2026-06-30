@@ -220,37 +220,17 @@
 
     async function loadDunkin(lat, lng, radius) {
       clearDunkin();
-      const radiusMeters = Math.round(radius * 1609);
-      const query = `[out:json][timeout:25];
-(
-  node["brand:wikidata"="Q1141226"](around:${radiusMeters},${lat},${lng});
-  way["brand:wikidata"="Q1141226"](around:${radiusMeters},${lat},${lng});
-  node["name"~"Dunkin",i](around:${radiusMeters},${lat},${lng});
-  way["name"~"Dunkin",i](around:${radiusMeters},${lat},${lng});
-);
-out center;`;
       setStatus("Loading Dunkin' locations...");
       try {
-        const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Overpass returned ${res.status}`);
-        const data = await res.json();
-        const seen = new Set();
-        data.elements.forEach(el => {
-          const elLat = el.lat ?? el.center?.lat;
-          const elLon = el.lon ?? el.center?.lon;
-          if (!elLat || !elLon) return;
-          const key = `${elLat.toFixed(5)},${elLon.toFixed(5)}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          const name = el.tags.name || "Dunkin'";
-          const address = [el.tags['addr:housenumber'], el.tags['addr:street'], el.tags['addr:city']]
-            .filter(Boolean).join(' ') || '';
-          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${elLat},${elLon}`;
-          const marker = L.marker([elLat, elLon], { icon: coffeeIcon }).addTo(map);
+        const res = await fetch(`/dunkin?lat=${lat}&lng=${lng}&radius=${radius}`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const locations = await res.json();
+        locations.forEach(loc => {
+          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`;
+          const marker = L.marker([loc.lat, loc.lng], { icon: coffeeIcon }).addTo(map);
           marker.bindPopup(`
-            <strong>${name}</strong>
-            ${address ? `<div class="meta">📍 ${address}</div>` : ''}
+            <strong>${loc.name}</strong>
+            ${loc.address ? `<div class="meta">📍 ${loc.address}</div>` : ''}
             <div class="actions">
               <a href="${directionsUrl}" target="_blank">🗺 Directions</a>
             </div>
@@ -259,7 +239,7 @@ out center;`;
         });
         setStatus(dunkinMarkers.length
           ? `Found ${dunkinMarkers.length} Dunkin' location(s).`
-          : "No Dunkin' locations found in this area.");
+          : "No Dunkin' locations found — data may not be loaded yet.");
       } catch (err) {
         setStatus(`Could not load Dunkin' locations: ${err.message}`);
       }
