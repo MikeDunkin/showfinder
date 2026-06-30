@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Query, HTTPException, Depends
+import os
+from fastapi import APIRouter, Query, HTTPException, Depends, Header
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import UpdateOne
 from app.db import get_db
@@ -30,6 +31,31 @@ async def get_dunkin(
         }
     }).limit(100)
     return [_fmt(loc) async for loc in cursor]
+
+
+def _check_api_key(x_api_key: str = Header(...)):
+    expected = os.getenv("DUNKIN_API_KEY", "")
+    if not expected or x_api_key != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@router.post("/load")
+async def load_dunkin(
+    locations: list[dict],
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    _: None = Depends(_check_api_key),
+):
+    if not locations:
+        raise HTTPException(status_code=400, detail="No locations provided")
+    ops = [
+        UpdateOne({"osm_id": loc["osm_id"]}, {"$set": {
+            **loc,
+            "location": {"type": "Point", "coordinates": [loc["lng"], loc["lat"]]},
+        }}, upsert=True)
+        for loc in locations
+    ]
+    result = await db.dunkin_locations.bulk_write(ops)
+    return {"total": len(locations), "upserted": result.upserted_count, "modified": result.modified_count}
 
 
 @router.post("/refresh")

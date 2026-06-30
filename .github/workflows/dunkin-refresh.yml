@@ -1,0 +1,87 @@
+name: Refresh Dunkin Locations
+
+on:
+  schedule:
+    - cron: "0 7 * * 0"  # Every Sunday 7am UTC
+  workflow_dispatch:      # Allow manual trigger
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: pip install httpx
+
+      - name: Fetch Dunkin locations from Overpass
+        run: |
+          python3 << 'EOF'
+          import httpx, json, sys
+
+          US_BBOX = "18.91,-171.79,71.38,-66.96"
+          query = (
+            f"[out:json][timeout:120];"
+            f"(node[\"name\"~\"Dunkin\",i]({US_BBOX});"
+            f"way[\"name\"~\"Dunkin\",i]({US_BBOX}););"
+            f"out center;"
+          )
+
+          r = httpx.get(
+            "https://overpass-api.de/api/interpreter",
+            params={"data": query},
+            headers={"User-Agent": "carshow-finder/1.0"},
+            timeout=130,
+          )
+          r.raise_for_status()
+          data = r.json()
+
+          locations = []
+          seen = set()
+          for el in data.get("elements", []):
+              lat = el.get("lat") or (el.get("center") or {}).get("lat")
+              lon = el.get("lon") or (el.get("center") or {}).get("lon")
+              if not lat or not lon:
+                  continue
+              key = f"{lat:.5f},{lon:.5f}"
+              if key in seen:
+                  continue
+              seen.add(key)
+              tags = el.get("tags", {})
+              locations.append({
+                  "osm_id": el["id"],
+                  "osm_type": el["type"],
+                  "name": tags.get("name", "Dunkin'"),
+                  "address": " ".join(filter(None, [
+                      tags.get("addr:housenumber"),
+                      tags.get("addr:street"),
+                      tags.get("addr:city"),
+                      tags.get("addr:state"),
+                  ])),
+                  "lat": lat,
+                  "lng": lon,
+              })
+
+          print(f"Fetched {len(locations)} locations")
+          with open("dunkin_locations.json", "w") as f:
+              json.dump(locations, f)
+          EOF
+
+      - name: Push to app
+        env:
+          APP_URL: ${{ secrets.CARSHOW_APP_URL }}
+          DUNKIN_API_KEY: ${{ secrets.DUNKIN_API_KEY }}
+        run: |
+          python3 << 'EOF'
+          import httpx, json, os
+
+          with open("dunkin_locations.json") as f:
+              locations = json.load(f)
+
+          r = httpx.post(
+            f"{os.environ['APP_URL']}/dunkin/load",
+            json=locations,
+            headers={"x-api-key": os.environ["DUNKIN_API_KEY"]},
+            timeout=60,
+          )
+          r.raise_for_status()
+          print("Seeded:", r.json())
+          EOF

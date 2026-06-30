@@ -24,6 +24,11 @@ spec:
                 secretKeyRef:
                   name: mongodb-secret
                   key: MONGODB_URL
+            - name: DUNKIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dunkin-api-secret
+                  key: DUNKIN_API_KEY
           readinessProbe:
             httpGet:
               path: /health
