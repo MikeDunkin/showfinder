@@ -130,7 +130,6 @@
     let markers = [];
     let dunkinMarkers = [];
     let dunkinVisible = false;
-    let lastLat = 39.5, lastLng = -98.35;
 
     const coffeeIcon = L.divIcon({
       className: '',
@@ -251,8 +250,9 @@
       if (dunkinVisible) {
         btn.classList.add('active');
         btn.textContent = "☕ Hide Dunkin' Locations";
+        const center = map.getCenter();
         const radius = document.getElementById('radius').value;
-        await loadDunkin(lastLat, lastLng, radius);
+        await loadDunkin(center.lat, center.lng, radius);
       } else {
         btn.classList.remove('active');
         btn.textContent = "☕ Show Dunkin' Locations";
@@ -261,7 +261,6 @@
     }
 
     async function doSearch(lat, lng) {
-      lastLat = lat; lastLng = lng;
       const radius = document.getElementById('radius').value;
       setStatus('Searching for car shows...');
       try {
@@ -269,7 +268,7 @@
         if (!res.ok) { setStatus('API error — check server logs.'); return; }
         const shows = await res.json();
         displayShows(shows, lat, lng);
-        if (dunkinVisible) await loadDunkin(lat, lng, radius);
+        if (dunkinVisible) { const c = map.getCenter(); await loadDunkin(c.lat, c.lng, radius); }
       } catch {
         setStatus('Error fetching shows.');
       }
