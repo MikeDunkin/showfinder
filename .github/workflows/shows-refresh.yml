@@ -12,80 +12,90 @@ jobs:
       - name: Install dependencies
         run: pip install httpx
 
-      - name: Fetch car shows from Eventbrite
+      - name: Fetch car shows from Ticketmaster
         env:
-          EVENTBRITE_TOKEN: ${{ secrets.EVENTBRITE_TOKEN }}
+          TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
         run: |
           python3 << 'EOF'
           import httpx, json, sys, time
+          from datetime import datetime, timezone
 
-          TOKEN = "${{ secrets.EVENTBRITE_TOKEN }}"
-          BASE_URL = "https://www.eventbriteapi.com/v3"
+          API_KEY = "${{ secrets.TICKETMASTER_API_KEY }}"
+          BASE_URL = "https://app.ticketmaster.com/discovery/v2"
+          START_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
 
-          # Major US cities spread across the country for nationwide coverage
           CITIES = [
-            ("Seattle",      47.6062, -122.3321),
-            ("San Francisco",37.7749, -122.4194),
-            ("Los Angeles",  34.0522, -118.2437),
-            ("Phoenix",      33.4484, -112.0740),
-            ("Denver",       39.7392, -104.9903),
-            ("Dallas",       32.7767,  -96.7970),
-            ("Houston",      29.7604,  -95.3698),
-            ("Minneapolis",  44.9778,  -93.2650),
-            ("Chicago",      41.8781,  -87.6298),
-            ("Detroit",      42.3314,  -83.0458),
-            ("Atlanta",      33.7490,  -84.3880),
-            ("Miami",        25.7617,  -80.1918),
-            ("New York",     40.7128,  -74.0060),
-            ("Boston",       42.3601,  -71.0589),
-            ("Charlotte",    35.2271,  -80.8431),
+            ("Seattle",       47.6062, -122.3321),
+            ("San Francisco", 37.7749, -122.4194),
+            ("Los Angeles",   34.0522, -118.2437),
+            ("Phoenix",       33.4484, -112.0740),
+            ("Denver",        39.7392, -104.9903),
+            ("Dallas",        32.7767,  -96.7970),
+            ("Houston",       29.7604,  -95.3698),
+            ("Minneapolis",   44.9778,  -93.2650),
+            ("Chicago",       41.8781,  -87.6298),
+            ("Detroit",       42.3314,  -83.0458),
+            ("Atlanta",       33.7490,  -84.3880),
+            ("Miami",         25.7617,  -80.1918),
+            ("New York",      40.7128,  -74.0060),
+            ("Boston",        42.3601,  -71.0589),
+            ("Charlotte",     35.2271,  -80.8431),
           ]
 
           shows = {}
 
-          with httpx.Client(timeout=20, headers={"Authorization": f"Bearer {TOKEN}"}) as client:
+          with httpx.Client(timeout=20) as client:
             for city, lat, lng in CITIES:
-              page = 1
-              while page <= 5:
-                resp = client.get(f"{BASE_URL}/events/search/", params={
-                  "q": "car show",
-                  "location.latitude": lat,
-                  "location.longitude": lng,
-                  "location.within": "200mi",
-                  "expand": "venue",
+              for page in range(5):
+                resp = client.get(f"{BASE_URL}/events.json", params={
+                  "apikey": API_KEY,
+                  "keyword": "car show",
+                  "latlong": f"{lat},{lng}",
+                  "radius": 200,
+                  "unit": "miles",
+                  "countryCode": "US",
+                  "size": 200,
                   "page": page,
+                  "startDateTime": START_DATE,
                 })
                 if resp.status_code == 401:
-                  print("ERROR: Invalid Eventbrite token")
+                  print("ERROR: Invalid Ticketmaster API key")
                   sys.exit(1)
                 if not resp.is_success:
                   print(f"  {city} page {page}: HTTP {resp.status_code} — stopping")
                   break
                 data = resp.json()
-                events = data.get("events", [])
+                events = data.get("_embedded", {}).get("events", [])
                 print(f"  {city} page {page}: {len(events)} events")
+                if not events:
+                  break
                 for event in events:
                   eid = event.get("id")
                   if not eid or eid in shows:
                     continue
-                  venue = event.get("venue") or {}
-                  address = venue.get("address") or {}
-                  vlat = venue.get("latitude")
-                  vlng = venue.get("longitude")
+                  venues = event.get("_embedded", {}).get("venues", [{}])
+                  venue = venues[0] if venues else {}
+                  loc = venue.get("location", {})
+                  vlat = loc.get("latitude")
+                  vlng = loc.get("longitude")
+                  city_name = venue.get("city", {}).get("name", "")
+                  state = venue.get("state", {}).get("stateCode", "")
+                  venue_name = ", ".join(filter(None, [venue.get("name"), city_name, state]))
+                  start = event.get("dates", {}).get("start", {})
+                  date = f"{start.get('localDate', '')}T{start.get('localTime', '00:00:00')}"
                   shows[eid] = {
                     "eventbrite_id": eid,
-                    "name": event["name"]["text"],
-                    "date": event["start"]["local"],
-                    "url": event["url"],
-                    "venue": address.get("localized_address_display"),
+                    "name": event["name"],
+                    "date": date,
+                    "url": event.get("url"),
+                    "venue": venue_name or None,
                     "lat": float(vlat) if vlat else None,
                     "lng": float(vlng) if vlng else None,
                   }
-                pagination = data.get("pagination", {})
-                if page >= pagination.get("page_count", 1):
+                pagination = data.get("page", {})
+                if page + 1 >= pagination.get("totalPages", 1):
                   break
-                page += 1
-                time.sleep(0.5)
+                time.sleep(0.3)
 
           result = list(shows.values())
           print(f"\nTotal unique shows: {len(result)}")
