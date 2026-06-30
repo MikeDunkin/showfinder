@@ -1,7 +1,9 @@
 import asyncio
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+import os
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from pydantic import BaseModel
 from bson import ObjectId
+from pymongo import UpdateOne
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.db import get_db
 from app.services.geo import geocode_city
@@ -77,6 +79,37 @@ async def _run_geocoding(db: AsyncIOMotorDatabase):
             )
             updated += 1
     print(f"[geocode] done — {updated} shows geocoded", flush=True)
+
+
+def _check_api_key(x_api_key: str = Header(...)):
+    expected = os.getenv("SHOWS_API_KEY", "")
+    if not expected or x_api_key != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@router.post("/shows/load")
+async def load_shows(
+    shows: list[dict],
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    _: None = Depends(_check_api_key),
+):
+    if not shows:
+        raise HTTPException(status_code=400, detail="No shows provided")
+
+    ops = []
+    for show in shows:
+        lat = show.pop("lat", None)
+        lng = show.pop("lng", None)
+        if lat is not None and lng is not None:
+            show["location"] = {"type": "Point", "coordinates": [lng, lat]}
+        ops.append(UpdateOne(
+            {"eventbrite_id": show["eventbrite_id"]},
+            {"$set": show},
+            upsert=True,
+        ))
+
+    result = await db.car_shows.bulk_write(ops)
+    return {"total": len(shows), "upserted": result.upserted_count, "modified": result.modified_count}
 
 
 @router.delete("/shows/{show_id}")

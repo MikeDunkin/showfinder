@@ -17,6 +17,7 @@ async def init_db():
             _client = AsyncIOMotorClient(MONGODB_URL, serverSelectionTimeoutMS=5000)
             await _client.server_info()
             await _client.carshowdb.car_shows.create_index([("location", "2dsphere")])
+            await _client.carshowdb.car_shows.create_index([("eventbrite_id", 1)], unique=True, sparse=True)
             await _client.carshowdb.dunkin_locations.create_index([("location", "2dsphere")])
             await _client.carshowdb.dunkin_locations.create_index([("osm_id", 1)], unique=True)
             print("[db] MongoDB connected and indexes ready", flush=True)

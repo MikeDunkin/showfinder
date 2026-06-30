@@ -29,6 +29,11 @@ spec:
                 secretKeyRef:
                   name: dunkin-api-secret
                   key: DUNKIN_API_KEY
+            - name: SHOWS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shows-api-secret
+                  key: SHOWS_API_KEY
           readinessProbe:
             httpGet:
               path: /health
