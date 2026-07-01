@@ -7,6 +7,9 @@ on:
 
 jobs:
   refresh:
+    # NOTE: carcruisefinder.com blocks datacenter/GitHub Actions IPs (Cloudflare 403).
+    # Run scripts/scrape.py manually from a home machine instead:
+    #   python3 scripts/scrape.py --states AL AK AZ ... --api http://35.229.88.234
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,12 +19,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install httpx beautifulsoup4 lxml
+        run: pip install httpx
 
       - name: Scrape car shows
         env:
           API_URL: ${{ secrets.CARSHOW_APP_URL }}
+        continue-on-error: true
         run: |
-          python scripts/scrape.py \
+          python3 scripts/scrape.py \
             --states AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY \
             --api "$API_URL"

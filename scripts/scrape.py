@@ -45,7 +45,7 @@ def fetch_state(state: str) -> list[dict]:
             res = httpx.get(BASE_URL, headers=HEADERS, timeout=30, params={
                 "per_page": 100,
                 "page": page,
-                "tags": slug,
+                "categories": slug,
                 "start_date": time.strftime("%Y-%m-%d"),
             })
         except Exception as e:
@@ -101,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--states", nargs="+", default=["NJ", "NY", "PA", "CT"],
                         help="State abbreviations to fetch")
-    parser.add_argument("--api", default="http://34.138.72.24",
+    parser.add_argument("--api", default="http://35.229.88.234",
                         help="Carshowfinder API base URL")
     args = parser.parse_args()
 

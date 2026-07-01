@@ -205,9 +205,11 @@
 
     async function getLocationByIP() {
       try {
-        const res = await fetch('https://ip-api.com/json/');
+        const ipRes = await fetch('https://api.ipify.org?format=json');
+        const { ip } = await ipRes.json();
+        const res = await fetch(`/location?ip=${ip}`);
         const data = await res.json();
-        if (data.status === 'success') return { lat: data.lat, lng: data.lon };
+        if (data.lat != null) return { lat: data.lat, lng: data.lng };
       } catch {}
       return null;
     }
@@ -276,20 +278,22 @@
 
     async function searchByGPS() {
       setStatus('Getting your location...');
+
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          pos => doSearch(pos.coords.latitude, pos.coords.longitude),
-          async () => {
-            setStatus('Browser location blocked (HTTP) — using approximate IP location...');
-            const coords = await getLocationByIP();
-            if (coords) await doSearch(coords.lat, coords.lng);
-            else setStatus('Could not determine location. Try ZIP search.');
-          }
-        );
+        try {
+          const pos = await new Promise((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, maximumAge: 60000 })
+          );
+          return doSearch(pos.coords.latitude, pos.coords.longitude);
+        } catch {}
+      }
+
+      setStatus('Using approximate IP location...');
+      const coords = await getLocationByIP();
+      if (coords) {
+        await doSearch(coords.lat, coords.lng);
       } else {
-        const coords = await getLocationByIP();
-        if (coords) await doSearch(coords.lat, coords.lng);
-        else setStatus('Could not determine location. Try ZIP search.');
+        setStatus('Could not determine location. Try entering a ZIP code.');
       }
     }
 

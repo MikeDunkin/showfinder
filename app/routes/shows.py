@@ -25,7 +25,7 @@ async def _search(lat: float, lng: float, radius: int, db: AsyncIOMotorDatabase)
     return [_fmt(s) async for s in cursor]
 
 
-@router.get("/")
+@router.get("")
 async def get_shows_by_coords(
     lat: float = Query(..., description="Latitude"),
     lng: float = Query(..., description="Longitude"),
