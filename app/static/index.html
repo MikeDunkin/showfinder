@@ -105,10 +105,35 @@
     .btn-dunkin { background: #ff6e00; color: #fff; }
     .btn-dunkin:hover { background: #e05e00; }
     .btn-dunkin.active { background: #a03e00; }
+
+    .btn-shows { background: #1a1a2e; color: #fff; }
+    .btn-shows:hover { background: #2d2d50; }
+    .btn-shows.active { background: #555; }
+
+    #search-area-btn {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      padding: 8px 20px;
+      background: #fff;
+      border: 2px solid #1a73e8;
+      border-radius: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      color: #1a73e8;
+      display: none;
+      white-space: nowrap;
+    }
+    #search-area-btn:hover { background: #e8f0fe; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <button id="search-area-btn" onclick="searchArea()">🔍 Search this area</button>
   <div id="panel">
     <div id="panel-header">Car Show Finder</div>
     <div id="panel-body">
@@ -116,6 +141,7 @@
       <input type="number" id="radius" value="25" min="5" max="100" placeholder="Radius (miles)" />
       <button class="btn btn-primary" onclick="searchByZip()">Search by ZIP</button>
       <button class="btn btn-gps" onclick="searchByGPS()">Use My Location</button>
+      <button class="btn btn-shows active" id="shows-btn" onclick="toggleShows()">🚗 Hide Car Shows</button>
       <button class="btn btn-dunkin" id="dunkin-btn" onclick="toggleDunkin()">☕ Show Dunkin' Locations</button>
       <div id="status"></div>
     </div>
@@ -130,6 +156,8 @@
     let markers = [];
     let dunkinMarkers = [];
     let dunkinVisible = false;
+    let showsVisible = true;
+    let lastCenter = null;
 
     const coffeeIcon = L.divIcon({
       className: '',
@@ -156,9 +184,16 @@
       markers = [];
     }
 
-    function displayShows(shows, centerLat, centerLng) {
+    function getMapRadius() {
+      const center = map.getCenter();
+      const ne = map.getBounds().getNorthEast();
+      const distMeters = center.distanceTo(ne);
+      return Math.max(5, Math.min(300, Math.round(distMeters / 1609.34)));
+    }
+
+    function displayShows(shows, centerLat, centerLng, recenter = true) {
       clearMarkers();
-      map.setView([centerLat, centerLng], 10);
+      if (recenter) map.setView([centerLat, centerLng], 10);
 
       if (shows.length === 0) {
         setStatus('No car shows found in this area.');
@@ -183,7 +218,8 @@
           : encodeURIComponent(venue);
         const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${dirTarget}`;
 
-        const marker = L.marker([lat, lng], { icon: carIcon }).addTo(map);
+        const marker = L.marker([lat, lng], { icon: carIcon });
+        if (showsVisible) marker.addTo(map);
         marker.bindPopup(`
           <strong>${show.name}</strong>
           <div class="meta">
@@ -198,8 +234,22 @@
         markers.push(marker);
       });
 
-      if (bounds.length > 1) {
+      if (recenter && bounds.length > 1) {
         map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    }
+
+    function toggleShows() {
+      const btn = document.getElementById('shows-btn');
+      showsVisible = !showsVisible;
+      if (showsVisible) {
+        btn.classList.add('active');
+        btn.textContent = '🚗 Hide Car Shows';
+        markers.forEach(m => m.addTo(map));
+      } else {
+        btn.classList.remove('active');
+        btn.textContent = '🚗 Show Car Shows';
+        markers.forEach(m => map.removeLayer(m));
       }
     }
 
@@ -262,18 +312,30 @@
       }
     }
 
-    async function doSearch(lat, lng) {
-      const radius = document.getElementById('radius').value;
+    async function doSearch(lat, lng, radius, recenter = true) {
+      if (!radius) radius = parseInt(document.getElementById('radius').value) || 25;
+      lastCenter = { lat, lng };
+      suppressSearchBtn = true;
+      document.getElementById('search-area-btn').style.display = 'none';
       setStatus('Searching for car shows...');
       try {
         const res = await fetch(`/shows?lat=${lat}&lng=${lng}&radius=${radius}`);
         if (!res.ok) { setStatus('API error — check server logs.'); return; }
         const shows = await res.json();
-        displayShows(shows, lat, lng);
-        if (dunkinVisible) { const c = map.getCenter(); await loadDunkin(c.lat, c.lng, radius); }
+        displayShows(shows, lat, lng, recenter);
+        if (dunkinVisible) await loadDunkin(lat, lng, radius);
       } catch {
         setStatus('Error fetching shows.');
+      } finally {
+        setTimeout(() => { suppressSearchBtn = false; }, 1000);
       }
+    }
+
+    async function searchArea() {
+      const center = map.getCenter();
+      const radius = getMapRadius();
+      document.getElementById('radius').value = Math.min(100, radius);
+      await doSearch(center.lat, center.lng, radius, false);
     }
 
     async function searchByGPS() {
@@ -321,6 +383,13 @@
         setStatus('Error fetching shows.');
       }
     }
+
+    let suppressSearchBtn = false;
+    map.on('moveend', () => {
+      if (!suppressSearchBtn) {
+        document.getElementById('search-area-btn').style.display = 'block';
+      }
+    });
 
     searchByGPS();
   </script>
