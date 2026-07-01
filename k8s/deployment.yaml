@@ -13,6 +13,12 @@ spec:
       labels:
         app: carshowfinder
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: carshowfinder
           image: us-east1-docker.pkg.dev/richkube-2026/testkube-images/carshowfinder:latest
@@ -34,9 +40,20 @@ spec:
                 secretKeyRef:
                   name: shows-api-secret
                   key: SHOWS_API_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
