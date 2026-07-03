@@ -29,7 +29,20 @@
       padding: 14px 16px;
       font-size: 16px;
       font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
     }
+
+    #panel-toggle {
+      font-size: 18px;
+      line-height: 1;
+      opacity: 0.8;
+    }
+
+    #panel-body.collapsed { display: none; }
 
     #panel-body { padding: 14px; }
 
@@ -135,7 +148,7 @@
   <div id="map"></div>
   <button id="search-area-btn" onclick="searchArea()">🔍 Search this area</button>
   <div id="panel">
-    <div id="panel-header">Car Show Finder</div>
+    <div id="panel-header" onclick="togglePanel()">Car Show Finder <span id="panel-toggle">▼</span></div>
     <div id="panel-body">
       <input type="text" id="zip" placeholder="ZIP code" maxlength="10" />
       <input type="number" id="radius" value="25" min="5" max="100" placeholder="Radius (miles)" />
@@ -382,6 +395,13 @@
       } catch {
         setStatus('Error fetching shows.');
       }
+    }
+
+    function togglePanel() {
+      const body = document.getElementById('panel-body');
+      const toggle = document.getElementById('panel-toggle');
+      const collapsed = body.classList.toggle('collapsed');
+      toggle.textContent = collapsed ? '▲' : '▼';
     }
 
     let suppressSearchBtn = false;
