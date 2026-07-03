@@ -428,7 +428,7 @@
       const collapsed = body.classList.toggle('collapsed');
       toggle.textContent = collapsed ? 'Show ▼' : 'Hide ▲';
       panel.style.display = collapsed ? 'none' : '';
-      reopen.style.display = collapsed ? '' : 'none';
+      reopen.style.display = collapsed ? 'block' : 'none';
     }
 
     let suppressSearchBtn = false;
