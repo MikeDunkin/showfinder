@@ -7,23 +7,27 @@ on:
 
 jobs:
   scrape:
+    # NOTE: carcruisefinder.com is protected by Cloudflare which blocks
+    # datacenter/GitHub Actions IPs regardless of browser type.
+    # Run the scraper manually from a home machine instead:
+    #   python3 scripts/scrape.py --states AL AK AZ ... --api http://35.229.88.234
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         run: |
-          python -m pip install httpx playwright
+          pip install httpx playwright
           python -m playwright install chromium --with-deps
 
       - name: Run scraper
         env:
           API_URL: ${{ secrets.CARSHOW_API_URL }}
-          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+        continue-on-error: true
         run: |
           python scripts/scrape.py \
             --states AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY \
