@@ -17,15 +17,18 @@ jobs:
           python3 << 'EOF'
           import httpx, json, sys, time
 
-          # Split US into 4×3 grid + AK + HI to stay within Overpass timeout limits
-          US_BBOXES = [
-              "24.5,-125.0,32.5,-110.0", "24.5,-110.0,32.5,-95.0",
-              "24.5,-95.0,32.5,-80.0",  "24.5,-80.0,32.5,-65.0",
-              "32.5,-125.0,40.5,-110.0", "32.5,-110.0,40.5,-95.0",
-              "32.5,-95.0,40.5,-80.0",  "32.5,-80.0,40.5,-65.0",
-              "40.5,-125.0,49.0,-110.0", "40.5,-110.0,49.0,-95.0",
-              "40.5,-95.0,49.0,-80.0",  "40.5,-80.0,49.0,-65.0",
-              "51.0,-179.0,72.0,-129.0",
+          # 8×5 grid (8°lon × 5°lat) + AK split into 2 + HI = 43 queries
+          US_BBOXES = []
+          for row in range(5):
+              s = 24.0 + row * 5.0
+              n = s + 5.0
+              for col in range(8):
+                  w = -125.0 + col * 8.0
+                  e = w + 8.0
+                  US_BBOXES.append(f"{s},{w},{n},{e}")
+          US_BBOXES += [
+              "54.0,-179.0,72.0,-141.0",
+              "54.0,-141.0,72.0,-129.0",
               "18.0,-161.0,23.0,-154.0",
           ]
 
@@ -39,7 +42,7 @@ jobs:
 
           for bbox in US_BBOXES:
               query = (
-                f"[out:json][timeout:60];"
+                f"[out:json][timeout:45];"
                 f"(node[\"name\"~\"Dunkin\",i]({bbox});"
                 f"way[\"name\"~\"Dunkin\",i]({bbox}););"
                 f"out center;"
@@ -49,7 +52,7 @@ jobs:
                   try:
                       print(f"  Querying {url} bbox={bbox}...")
                       r = httpx.get(url, params={"data": query},
-                                    headers={"User-Agent": "carshow-finder/1.0"}, timeout=75)
+                                    headers={"User-Agent": "carshow-finder/1.0"}, timeout=60)
                       r.raise_for_status()
                       elements = r.json().get("elements", [])
                       for el in elements:

@@ -5,25 +5,31 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.kumi.systems/api/interpreter",
 ]
 
-# Split US into a 4×3 grid of the contiguous states plus AK and HI separately.
-# Each cell is small enough for Overpass to handle within its timeout.
-US_BBOXES = [
-    # Contiguous US — 4 columns × 3 rows (south, west, north, east)
-    "24.5,-125.0,32.5,-110.0", "24.5,-110.0,32.5,-95.0",
-    "24.5,-95.0,32.5,-80.0",  "24.5,-80.0,32.5,-65.0",
-    "32.5,-125.0,40.5,-110.0", "32.5,-110.0,40.5,-95.0",
-    "32.5,-95.0,40.5,-80.0",  "32.5,-80.0,40.5,-65.0",
-    "40.5,-125.0,49.0,-110.0", "40.5,-110.0,49.0,-95.0",
-    "40.5,-95.0,49.0,-80.0",  "40.5,-80.0,49.0,-65.0",
-    # Alaska and Hawaii
-    "51.0,-179.0,72.0,-129.0",
-    "18.0,-161.0,23.0,-154.0",
-]
+# Split US into an 8×5 grid of the contiguous states plus AK (2 cells) and HI.
+# 8° longitude × 5° latitude per cell keeps each query well within Overpass limits.
+def _build_bboxes() -> list[str]:
+    bboxes = []
+    for row in range(5):
+        s = 24.0 + row * 5.0
+        n = s + 5.0
+        for col in range(8):
+            w = -125.0 + col * 8.0
+            e = w + 8.0
+            bboxes.append(f"{s},{w},{n},{e}")
+    # Alaska — split west/east to avoid antimeridian issues
+    bboxes += [
+        "54.0,-179.0,72.0,-141.0",
+        "54.0,-141.0,72.0,-129.0",
+        "18.0,-161.0,23.0,-154.0",  # Hawaii
+    ]
+    return bboxes
+
+US_BBOXES = _build_bboxes()
 
 
 def _make_query(bbox: str) -> str:
     return (
-        f"[out:json][timeout:60];"
+        f"[out:json][timeout:45];"
         f"(node[\"name\"~\"Dunkin\",i]({bbox});"
         f"way[\"name\"~\"Dunkin\",i]({bbox}););"
         f"out center;"
