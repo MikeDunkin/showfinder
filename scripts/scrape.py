@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Fetches car shows from carcruisefinder.com via The Events Calendar REST API
+Fetches car shows from carcruisefinder.com by scraping HTML listings
 and posts them to the carshowfinder admin API.
 
 Usage:
-    python scripts/scrape.py --states NJ NY PA --api http://34.138.72.24
+    python scripts/scrape.py --states NJ NY PA --api http://35.229.88.234
+
+Requires: pip install playwright httpx && python -m playwright install chromium
 """
 
 import argparse
-import os
+import re
 import time
 import httpx
+from playwright.sync_api import sync_playwright, Page
 
 STATE_SLUGS = {
     "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas",
@@ -28,62 +31,82 @@ STATE_SLUGS = {
     "WI": "wisconsin", "WY": "wyoming",
 }
 
-BASE_URL = "https://carcruisefinder.com/wp-json/tribe/events/v1/events"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+def parse_city_state(address: str) -> tuple[str | None, str | None]:
+    """Extract city and state from 'City, ST, United States' format."""
+    parts = [p.strip() for p in address.split(",")]
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return None, None
 
 
-def fetch_state(state: str) -> list[dict]:
+def scrape_page(page: Page, url: str, state_abbr: str) -> list[dict]:
+    shows = []
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        time.sleep(2)
+    except Exception as e:
+        print(f"  Error loading {url}: {e}")
+        return shows
+
+    articles = page.locator("article").all()
+    for article in articles:
+        try:
+            time_el = article.locator("time").first
+            date = time_el.get_attribute("datetime") if time_el else None
+
+            title_el = article.locator("h3 a").first
+            name = title_el.inner_text().strip() if title_el else None
+            event_url = title_el.get_attribute("href") if title_el else None
+
+            venue_el = article.locator(".tribe-events-calendar-list__event-venue-title").first
+            venue = venue_el.inner_text().strip() if venue_el else None
+
+            addr_el = article.locator(".tribe-events-calendar-list__event-venue-address").first
+            addr_text = addr_el.inner_text().strip() if addr_el else ""
+            # Remove "SAVE EVENT" and similar trailing text
+            addr_text = re.split(r"\s{2,}|\n", addr_text)[0].strip()
+            city, state = parse_city_state(addr_text)
+
+            if name and date:
+                shows.append({
+                    "name": name,
+                    "date": date,
+                    "url": event_url,
+                    "venue": venue,
+                    "city": city,
+                    "state": state or state_abbr,
+                })
+        except Exception:
+            continue
+
+    return shows
+
+
+def fetch_state(state: str, page: Page) -> list[dict]:
     slug = STATE_SLUGS.get(state.upper())
     if not slug:
         print(f"Unknown state: {state}")
         return []
 
-    shows = []
-    page = 1
+    base_url = f"https://carcruisefinder.com/car-shows/category/{slug}/"
+    all_shows = []
+    page_num = 1
+
     while True:
-        try:
-            res = httpx.get(BASE_URL, headers=HEADERS, timeout=30, params={
-                "per_page": 100,
-                "page": page,
-                "categories": slug,
-                "start_date": time.strftime("%Y-%m-%d"),
-            })
-        except Exception as e:
-            print(f"  Error fetching {state} page {page}: {e}")
+        url = base_url if page_num == 1 else f"{base_url}page/{page_num}/"
+        shows = scrape_page(page, url, state)
+        if not shows:
             break
+        all_shows.extend(shows)
 
-        if res.status_code == 404:
-            # No events for this state/page
+        next_el = page.locator(".tribe-events-c-nav__next").all()
+        if not next_el:
             break
-        if res.status_code != 200:
-            print(f"  {state} page {page}: HTTP {res.status_code} — skipping")
-            break
-
-        data = res.json()
-        events = data.get("events", [])
-        if not events:
-            break
-
-        for event in events:
-            venue = event.get("venue", {})
-            shows.append({
-                "name": event.get("title", ""),
-                "date": event.get("start_date"),
-                "url": event.get("url"),
-                "venue": venue.get("venue"),
-                "city": venue.get("city"),
-                "state": venue.get("stateprovince") or state,
-                "lat": venue.get("geo_lat"),
-                "lng": venue.get("geo_lng"),
-            })
-
-        total_pages = data.get("total_pages", 1)
-        if page >= total_pages:
-            break
-        page += 1
+        page_num += 1
         time.sleep(0.5)
 
-    return shows
+    return all_shows
 
 
 def post_show(api_base: str, show: dict) -> str:
@@ -106,20 +129,36 @@ def main():
     args = parser.parse_args()
 
     total_added = 0
-    for state in args.states:
-        print(f"\nFetching {state}...")
-        shows = fetch_state(state)
-        print(f"  Found {len(shows)} shows")
-        for show in shows:
-            status = post_show(args.api, show)
-            if status == "added":
-                total_added += 1
-                print(f"  + {show['name']}")
-            elif status == "duplicate":
-                print(f"  ~ {show['name']} (already exists)")
-            else:
-                print(f"  ! {show['name']} ({status})")
-            time.sleep(0.2)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            )
+        )
+        page = context.new_page()
+
+        for state in args.states:
+            print(f"\nFetching {state}...")
+            shows = fetch_state(state, page)
+            print(f"  Found {len(shows)} shows")
+            for show in shows:
+                status = post_show(args.api, show)
+                if status == "added":
+                    total_added += 1
+                    print(f"  + {show['name']}")
+                elif status == "duplicate":
+                    print(f"  ~ {show['name']} (already exists)")
+                else:
+                    print(f"  ! {show['name']} ({status})")
+                time.sleep(0.2)
+
+        browser.close()
 
     print(f"\nDone. {total_added} new show(s) added.")
 
