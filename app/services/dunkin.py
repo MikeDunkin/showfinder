@@ -3,6 +3,8 @@ import httpx
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.nchc.org.tw/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
 ]
 
 # Split US into an 8×5 grid of the contiguous states plus AK (2 cells) and HI.
@@ -65,13 +67,13 @@ async def fetch_all_dunkin_us() -> list[dict]:
     locations: list[dict] = []
     seen: set[str] = set()
 
-    async with httpx.AsyncClient(timeout=75) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         for bbox in US_BBOXES:
             query = _make_query(bbox)
             fetched = False
             for url in OVERPASS_ENDPOINTS:
                 try:
-                    res = await client.get(url, params={"data": query}, headers={"User-Agent": "carshow-finder/1.0"})
+                    res = await client.post(url, data={"data": query}, headers={"User-Agent": "carshow-finder/1.0"})
                     res.raise_for_status()
                     data = res.json()
                     if data.get("elements") is not None:
