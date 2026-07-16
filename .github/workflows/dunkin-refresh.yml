@@ -10,87 +10,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
-        run: pip install httpx
+        run: pip install httpx duckdb
 
-      - name: Fetch Dunkin locations from Overpass
+      - name: Fetch Dunkin locations from Overture Maps
         run: |
           python3 << 'EOF'
-          import httpx, json, sys, time
+          import duckdb, json, sys, subprocess, re
 
-          # 8×5 grid (8°lon × 5°lat) + AK split into 2 + HI = 43 queries
-          US_BBOXES = []
-          for row in range(5):
-              s = 24.0 + row * 5.0
-              n = s + 5.0
-              for col in range(8):
-                  w = -125.0 + col * 8.0
-                  e = w + 8.0
-                  US_BBOXES.append(f"{s},{w},{n},{e}")
-          US_BBOXES += [
-              "54.0,-179.0,72.0,-141.0",
-              "54.0,-141.0,72.0,-129.0",
-              "18.0,-161.0,23.0,-154.0",
-          ]
+          # Discover the latest Overture Maps release from the public S3 bucket
+          result = subprocess.run(
+              ["aws", "s3", "ls", "s3://overturemaps-us-west-2/release/", "--no-sign-request"],
+              capture_output=True, text=True,
+          )
+          releases = sorted(re.findall(r"(\d{4}-\d{2}-\d{2}\.\d+)/", result.stdout))
+          if not releases:
+              print("ERROR: Could not discover Overture Maps releases")
+              print(result.stdout, result.stderr)
+              sys.exit(1)
+          latest = releases[-1]
+          print(f"Using Overture Maps release: {latest}")
 
-          ENDPOINTS = [
-            "https://overpass-api.de/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter",
-            "https://overpass.nchc.org.tw/api/interpreter",
-            "https://overpass.openstreetmap.ru/api/interpreter",
-          ]
+          con = duckdb.connect()
+          con.execute("INSTALL httpfs; LOAD httpfs; INSTALL spatial; LOAD spatial;")
+          con.execute("SET s3_region='us-west-2';")
+
+          path = f"s3://overturemaps-us-west-2/release/{latest}/theme=places/type=place/*"
+          print(f"Querying: {path}")
+
+          rows = con.execute(f"""
+              SELECT
+                  id,
+                  names.primary                       AS name,
+                  COALESCE(addresses[1].freeform, '') AS address,
+                  ST_Y(ST_GeomFromWKB(geometry))      AS lat,
+                  ST_X(ST_GeomFromWKB(geometry))      AS lng
+              FROM read_parquet('{path}', hive_partitioning=1)
+              WHERE bbox.xmin BETWEEN -180 AND -60
+                AND bbox.ymin BETWEEN  18  AND  72
+                AND names.primary ILIKE '%dunkin%'
+          """).fetchall()
 
           locations = []
-          seen = set()
+          for row_id, name, address, lat, lng in rows:
+              if lat is None or lng is None:
+                  continue
+              locations.append({
+                  "osm_id": row_id,
+                  "osm_type": "overture",
+                  "name": name or "Dunkin'",
+                  "address": address or "",
+                  "lat": lat,
+                  "lng": lng,
+              })
 
-          for bbox in US_BBOXES:
-              query = (
-                f"[out:json][timeout:45];"
-                f"(node[\"name\"~\"Dunkin\",i]({bbox});"
-                f"way[\"name\"~\"Dunkin\",i]({bbox}););"
-                f"out center;"
-              )
-              fetched = False
-              for url in ENDPOINTS:
-                  try:
-                      print(f"  Querying {url} bbox={bbox}...")
-                      r = httpx.post(url, data={"data": query},
-                                     headers={"User-Agent": "carshow-finder/1.0"}, timeout=60)
-                      r.raise_for_status()
-                      elements = r.json().get("elements", [])
-                      for el in elements:
-                          lat = el.get("lat") or (el.get("center") or {}).get("lat")
-                          lon = el.get("lon") or (el.get("center") or {}).get("lon")
-                          if not lat or not lon:
-                              continue
-                          key = f"{lat:.5f},{lon:.5f}"
-                          if key in seen:
-                              continue
-                          seen.add(key)
-                          tags = el.get("tags", {})
-                          locations.append({
-                              "osm_id": el["id"],
-                              "osm_type": el["type"],
-                              "name": tags.get("name", "Dunkin'"),
-                              "address": " ".join(filter(None, [
-                                  tags.get("addr:housenumber"),
-                                  tags.get("addr:street"),
-                                  tags.get("addr:city"),
-                                  tags.get("addr:state"),
-                              ])),
-                              "lat": lat,
-                              "lng": lon,
-                          })
-                      print(f"  Got {len(elements)} elements (total unique: {len(locations)})")
-                      fetched = True
-                      break
-                  except Exception as e:
-                      print(f"  Error from {url}: {e}")
-              if not fetched:
-                  print(f"ERROR: All endpoints failed for bbox {bbox} — aborting")
-                  sys.exit(1)
-              time.sleep(1)  # be polite to Overpass
+          print(f"Found {len(locations)} Dunkin locations")
+          if not locations:
+              print("ERROR: No locations found — aborting")
+              sys.exit(1)
 
-          print(f"Processed {len(locations)} unique locations")
           with open("dunkin_locations.json", "w") as f:
               json.dump(locations, f)
           EOF

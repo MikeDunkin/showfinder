@@ -1,5 +1,8 @@
 import httpx
 
+# Note: bulk US-wide population is handled by the dunkin-refresh GitHub Actions
+# workflow using Overture Maps (S3/DuckDB). This service is retained for the
+# /dunkin/refresh admin endpoint which queries a small area on demand.
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
